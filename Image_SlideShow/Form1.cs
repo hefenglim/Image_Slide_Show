@@ -19,6 +19,9 @@ namespace Image_SlideShow
     {
         private IniFile ini;
         private List<String> fileList;
+        private List<UInt64> fileHitSeq;    // random selected item to record current sequence number.
+        private UInt64 RandSeq;             // random count sequence number.
+        private UInt64 RandGap;             // gap value range for reduce hit same item again.
         private string[] inFiles;
         private int durationSec;
         private int loopInx;
@@ -50,7 +53,7 @@ namespace Image_SlideShow
         public Form1()
         {
             InitializeComponent();
-            betaRelease = true;
+            betaRelease = false;
 
             if(betaRelease)
             {
@@ -68,7 +71,8 @@ namespace Image_SlideShow
 
             ini = new IniFile(Application.StartupPath + "\\config.ini");
             fileList = new List<string>();
-            fileList.Clear();
+            fileHitSeq = new List<UInt64>();
+            ClearFileList();
             updateStatus();
             durationSec = 3;
             loopInx = 0;
@@ -147,6 +151,16 @@ namespace Image_SlideShow
         }
 
         /// <summary>
+        /// Clear file list & re-initial random sequence no
+        /// </summary>
+        private void ClearFileList()
+        {
+            fileList.Clear();
+            fileHitSeq.Clear();
+            RandSeq = 0x1;
+        }
+
+        /// <summary>
         /// Returns true if the given file path is a folder.
         /// </summary>
         /// <param name="path">File path</param>
@@ -183,7 +197,7 @@ namespace Image_SlideShow
             long fc = 0;
             long count = inFiles.LongLength;
 
-            //fileList.Clear();
+            //ClearFileList();
             for (int i = 0; i < count; i++)
             {
                 if (IsFolder(inFiles[i]))
@@ -205,10 +219,15 @@ namespace Image_SlideShow
                                 case ".png":
                                 case ".tif":
                                     if (fileList.IndexOf(path) == -1)
+                                    {
                                         fileList.Add(path);
+                                        fileHitSeq.Add(0);
+                                    }
                                     fc++;
                                     if (fc % 50 == 0 || fc < 500)
+                                    {
                                         updateStatus();
+                                    }
                                     break;
                                 default:
                                     break;
@@ -232,10 +251,15 @@ namespace Image_SlideShow
                         case ".png":
                         case ".tif":
                             if (fileList.IndexOf(inFiles[i]) == -1)
+                            {
                                 fileList.Add(inFiles[i]);
+                                fileHitSeq.Add(0);
+                            }
                             fc++;
                             if (fc % 50 == 0 || fc < 500)
+                            {
                                 updateStatus();
+                            }
                             break;
                         default:
                             break;
@@ -248,10 +272,14 @@ namespace Image_SlideShow
 
             if (fileList.Count == 0)
             {
-                pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
-                pictureBox1.ImageLocation = fileList[0];
+                pictureBox1.ImageLocation = "";
+                pictureBox1.SizeMode = PictureBoxSizeMode.StretchImage;
+                pictureBox1.Image = Image_SlideShow.Properties.Resources.initialBack;
             }
-
+            else
+            {
+                RandGap = (ulong)(fileList.Count * 0.8);
+            }
         }
 
         private void fetchIniFileList(String path)
@@ -275,9 +303,14 @@ namespace Image_SlideShow
                         case ".png":
                         case ".tif":
                             if (fileList.IndexOf(fp) == -1)
+                            {
                                 fileList.Add(fp);
+                                fileHitSeq.Add(0);
+                            }
                             if (i % 50 == 0 || i < 500)
+                            {
                                 updateStatus();
+                            }
                             break;
                         default:
                             break;
@@ -359,7 +392,7 @@ namespace Image_SlideShow
             pictureBox1.ImageLocation = "";
             pictureBox1.SizeMode = PictureBoxSizeMode.StretchImage;
             pictureBox1.Image = Image_SlideShow.Properties.Resources.initialBack;
-            fileList.Clear();
+            ClearFileList();
             updateStatus();
         }
         
@@ -374,6 +407,67 @@ namespace Image_SlideShow
         {
             SetDuration form = new SetDuration(this);
             form.Show(durationSec);
+        }
+
+        private int randomPickInx()
+        {
+            ulong limitRand = (RandGap * 2);
+            int inx = (fileList.Count + 1);
+
+            if (limitRand > 1000) { limitRand = 1000; }
+            bool reGen = false;
+
+            do
+            {
+                while (inx >= fileList.Count)
+                {
+                    inx = rand.Next(0, fileList.Count);
+                }
+
+                if (fileHitSeq[inx] != 0)
+                {
+                    // check is less then seq gap. 
+                    if ((RandSeq - fileHitSeq[inx]) < RandGap)
+                    {
+                        if (--limitRand <= 0)
+                        {
+                            // over limit random, we clear the weight sequence.
+                            for (int i = 0; i < fileHitSeq.Count; i++)
+                            {
+                                fileHitSeq[i] = 0;
+                            }
+                            RandSeq = 1;
+                        }
+
+                        reGen = true;
+
+                        // re-random again.
+                        inx = (fileList.Count + 1);
+                    }
+                    else
+                    {
+                        // random gap over, re-selected again.
+                        fileHitSeq[inx] = RandSeq++;
+
+                        if (reGen)
+                        {
+                            reGen = false;
+                        }
+                    }
+                }
+                else
+                {
+                    // first time selected.
+                    fileHitSeq[inx] = RandSeq++;
+
+                    if (reGen)
+                    {
+                        reGen = false;
+                    }
+                }
+            } while (inx == (fileList.Count + 1));
+
+            return inx;
         }
 
         private void timerLoop_Tick(object sender, EventArgs e)
@@ -394,7 +488,7 @@ namespace Image_SlideShow
             {
                 //Detect pause mode active.
                 pictureBox1.BorderStyle = BorderStyle.Fixed3D;
-                timerLoop.Interval = 1000;
+                timerLoop.Interval = 500;
                 return;
             }
             else
@@ -408,25 +502,16 @@ namespace Image_SlideShow
 
             if (shufflePlay)
             {
-                int newInx = rand.Next(0, fileList.Count);
-
-                while (newInx == loopInx)
-                    newInx = rand.Next(0, fileList.Count);
-                loopInx = newInx;
-
-                while (loopInx >= fileList.Count)
-                    loopInx = rand.Next(0, fileList.Count);
+                loopInx = randomPickInx();
                 pictureBox1.ImageLocation = fileList[loopInx];
-
-                //if (loopInx % 20 == 0)
-                //    rand = new Random((Int32)DateTime.Now.Ticks);
-
             }
             else
             {
+                loopInx++;
                 if (loopInx >= fileList.Count)
                     loopInx = 0;
-                pictureBox1.ImageLocation = fileList[++loopInx];
+                fileHitSeq[loopInx] = RandSeq++; // record played sequence when not random case.
+                pictureBox1.ImageLocation = fileList[loopInx];
             }
         }
 
