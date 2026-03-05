@@ -49,6 +49,11 @@ namespace Image_SlideShow
         private bool fullscreen;
         private bool fullscreenActive;
         private clientRect oriForm;
+        private List<int> historyList;
+        private int historyIndex;
+        private const int MAX_HISTORY_DEPTH = 32;
+        private string osdMsg = "";
+        private System.Windows.Forms.Timer osdTimer;
 
         public Form1()
         {
@@ -72,6 +77,12 @@ namespace Image_SlideShow
             ini = new IniFile(Application.StartupPath + "\\config.ini");
             fileList = new List<string>();
             fileHitSeq = new List<UInt64>();
+            historyList = new List<int>();
+            historyIndex = -1;
+            osdTimer = new System.Windows.Forms.Timer();
+            osdTimer.Interval = 2000;
+            osdTimer.Tick += new EventHandler(OsdTimer_Tick);
+            pictureBox1.Paint += new PaintEventHandler(pictureBox1_Paint);
             ClearFileList();
             updateStatus();
             durationSec = 3;
@@ -158,6 +169,11 @@ namespace Image_SlideShow
             fileList.Clear();
             fileHitSeq.Clear();
             RandSeq = 0x1;
+            if (historyList != null)
+            {
+                historyList.Clear();
+                historyIndex = -1;
+            }
         }
 
         /// <summary>
@@ -411,63 +427,109 @@ namespace Image_SlideShow
 
         private int randomPickInx()
         {
-            ulong limitRand = (RandGap * 2);
-            int inx = (fileList.Count + 1);
-
-            if (limitRand > 1000) { limitRand = 1000; }
-            bool reGen = false;
-
-            do
+            int inx = -1;
+            // Check if all images have been played
+            bool allPlayed = true;
+            for (int i = 0; i < fileHitSeq.Count; i++)
             {
-                while (inx >= fileList.Count)
+                if (fileHitSeq[i] == 0)
                 {
-                    inx = rand.Next(0, fileList.Count);
+                    allPlayed = false;
+                    break;
                 }
+            }
 
-                if (fileHitSeq[inx] != 0)
+            // Reset if all played
+            if (allPlayed && fileHitSeq.Count > 0)
+            {
+                for (int i = 0; i < fileHitSeq.Count; i++)
                 {
-                    // check is less then seq gap. 
-                    if ((RandSeq - fileHitSeq[inx]) < RandGap)
+                    fileHitSeq[i] = 0;
+                }
+                RandSeq = 1;
+                this.Invoke((MethodInvoker)delegate
+                {
+                    ShowOsd("Random Cycle Reset");
+                });
+            }
+
+            // Try to randomly pick an unplayed image
+            inx = rand.Next(0, fileList.Count);
+            int attempts = 0;
+            while (fileHitSeq[inx] != 0 && attempts < fileList.Count * 2)
+            {
+                inx = rand.Next(0, fileList.Count);
+                attempts++;
+            }
+
+            // Linear search fallback if random pick fails to find an unplayed image quickly
+            if (fileHitSeq[inx] != 0)
+            {
+                for (int i = 0; i < fileHitSeq.Count; i++)
+                {
+                    if (fileHitSeq[i] == 0)
                     {
-                        if (--limitRand <= 0)
-                        {
-                            // over limit random, we clear the weight sequence.
-                            for (int i = 0; i < fileHitSeq.Count; i++)
-                            {
-                                fileHitSeq[i] = 0;
-                            }
-                            RandSeq = 1;
-                        }
-
-                        reGen = true;
-
-                        // re-random again.
-                        inx = (fileList.Count + 1);
+                        inx = i;
+                        break;
                     }
-                    else
-                    {
-                        // random gap over, re-selected again.
-                        fileHitSeq[inx] = RandSeq++;
+                }
+            }
 
-                        if (reGen)
-                        {
-                            reGen = false;
-                        }
-                    }
+            fileHitSeq[inx] = RandSeq++;
+            return inx;
+        }
+
+        private void advanceImage()
+        {
+            if (fileList.Count == 0) return;
+
+            if (historyIndex < historyList.Count - 1)
+            {
+                // Move forward in history
+                historyIndex++;
+                loopInx = historyList[historyIndex];
+                pictureBox1.ImageLocation = fileList[loopInx];
+            }
+            else
+            {
+                // Generate next image
+                if (shufflePlay)
+                {
+                    loopInx = randomPickInx();
                 }
                 else
                 {
-                    // first time selected.
-                    fileHitSeq[inx] = RandSeq++;
-
-                    if (reGen)
-                    {
-                        reGen = false;
-                    }
+                    if (historyList.Count > 0)
+                        loopInx = historyList[historyIndex] + 1;
+                    else
+                        loopInx++;
+                    
+                    if (loopInx >= fileList.Count)
+                        loopInx = 0;
+                        
+                    fileHitSeq[loopInx] = RandSeq++;
                 }
-            } while (inx == (fileList.Count + 1));
 
-            return inx;
+                historyList.Add(loopInx);
+                if (historyList.Count > MAX_HISTORY_DEPTH)
+                {
+                    historyList.RemoveAt(0);
+                }
+                historyIndex = historyList.Count - 1;
+                pictureBox1.ImageLocation = fileList[loopInx];
+            }
+        }
+
+        private void previousImage()
+        {
+            if (fileList.Count == 0) return;
+
+            if (historyIndex > 0)
+            {
+                historyIndex--;
+                loopInx = historyList[historyIndex];
+                pictureBox1.ImageLocation = fileList[loopInx];
+            }
         }
 
         private void timerLoop_Tick(object sender, EventArgs e)
@@ -500,18 +562,125 @@ namespace Image_SlideShow
 
             pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
 
-            if (shufflePlay)
+            advanceImage();
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (fileList.Count > 0)
             {
-                loopInx = randomPickInx();
-                pictureBox1.ImageLocation = fileList[loopInx];
+                switch (keyData)
+                {
+                    case Keys.Space:
+                        TogglePause();
+                        return true;
+                    case Keys.Left:
+                        previousImage();
+                        ShowOsd("Previous");
+                        return true;
+                    case Keys.Right:
+                        advanceImage();
+                        ShowOsd("Next");
+                        return true;
+                    case Keys.Escape:
+                        if (statusStrip1.Visible == false) // currently playing
+                        {
+                            pictureBox1_Click(null, null); // Exit presentation
+                        }
+                        else
+                        {
+                            this.Close();
+                        }
+                        return true;
+                    case Keys.F:
+                    case Keys.F11:
+                        if (statusStrip1.Visible == true) 
+                        {
+                            fullScreanClickToONToolStripMenuItem_Click(null, null);
+                        }
+                        else
+                        {
+                            pictureBox1_Click(null, null);
+                            fullScreanClickToONToolStripMenuItem_Click(null, null);
+                            pictureBox1_Click(null, null);
+                        }
+                        ShowOsd(fullscreen ? "Fullscreen On" : "Fullscreen Off");
+                        return true;
+                    case Keys.S:
+                        shuffleClickToONToolStripMenuItem_Click(null, null);
+                        ShowOsd(shufflePlay ? "Shuffle On" : "Shuffle Off");
+                        return true;
+                }
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void TogglePause()
+        {
+            Int32 read = 0;
+            Int32.TryParse(ini.ReadValue("LINK", "Pause"), out read);
+            if (read == 0)
+            {
+                ini.WriteValue("LINK", "Pause", "1");
+                timerLoop.Interval = 1000;
+                pictureBox1.BorderStyle = BorderStyle.Fixed3D;
+                ShowOsd("Pause");
+                this.Focus();
             }
             else
             {
-                loopInx++;
-                if (loopInx >= fileList.Count)
-                    loopInx = 0;
-                fileHitSeq[loopInx] = RandSeq++; // record played sequence when not random case.
-                pictureBox1.ImageLocation = fileList[loopInx];
+                ini.WriteValue("LINK", "Pause", "0");
+                pictureBox1.BorderStyle = BorderStyle.None;
+                timerLoop.Interval = 1;
+                timerLoop.Enabled = true;
+                ShowOsd("Play");
+                this.Focus();
+            }
+        }
+
+        private void ShowOsd(string msg)
+        {
+            osdMsg = msg;
+            osdTimer.Stop();
+            osdTimer.Start();
+            pictureBox1.Invalidate();
+            updateStatus();
+            statusLabel.Text += " (" + msg + ")";
+        }
+
+        private void OsdTimer_Tick(object sender, EventArgs e)
+        {
+            osdMsg = "";
+            osdTimer.Stop();
+            pictureBox1.Invalidate();
+        }
+
+        private void pictureBox1_Paint(object sender, PaintEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(osdMsg))
+            {
+                using (Font font = new Font("Arial", 28, FontStyle.Bold))
+                {
+                    SizeF size = e.Graphics.MeasureString(osdMsg, font);
+                    PointF pos = new PointF((pictureBox1.Width - size.Width) / 2, 50);
+                    e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(128, 0, 0, 0)), pos.X - 10, pos.Y - 10, size.Width + 20, size.Height + 20);
+                    e.Graphics.DrawString(osdMsg, font, Brushes.White, pos);
+                }
+            }
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (fileList.Count == 0) return;
+
+            if (e.Delta > 0)
+            {
+                previousImage();
+            }
+            else if (e.Delta < 0)
+            {
+                advanceImage();
             }
         }
 
@@ -777,59 +946,7 @@ namespace Image_SlideShow
 
         private void Form1_KeyPress(object sender, KeyPressEventArgs e)
         {
-            if (fileList.Count == 0)
-                return;
-
-            updateStatus();
-
-            if (e.KeyChar == ' ')
-            {
-                if (shufflePlay)
-                {
-                    statusLabel.Text += " (Shuffle Off)";
-                    shufflePlay = false;
-                    shuffleClickToONToolStripMenuItem.Text = "S&huffle (Click to ON)";
-                    ini.WriteValue("SETTING", "Shuffle", "0");
-                }
-                else
-                {
-                    statusLabel.Text += " (Shuffle On)";
-                    shufflePlay = true;
-                    shuffleClickToONToolStripMenuItem.Text = "S&huffle (Click to OFF)";
-                    ini.WriteValue("SETTING", "Shuffle", "1");
-                }
-            }
-            else
-            {
-                Int32 read = 0;
-                Int32.TryParse(ini.ReadValue("LINK", "Pause"), out read);
-                if (read == 0)
-                    pictureBox1.BorderStyle = BorderStyle.None;
-                else
-                    pictureBox1.BorderStyle = BorderStyle.Fixed3D;
-
-                if (pictureBox1.BorderStyle == BorderStyle.None)
-                {
-                    //Goes to pause mode.
-                    statusLabel.Text += " (Pause)";
-
-                    ini.WriteValue("LINK", "Pause", "1");
-                    timerLoop.Interval = 1000;
-                    pictureBox1.BorderStyle = BorderStyle.Fixed3D;
-                    this.Focus();
-                }
-                else
-                {
-                    //Continue slideshow.
-                    statusLabel.Text += " (Play)";
-
-                    ini.WriteValue("LINK", "Pause", "0");
-                    pictureBox1.BorderStyle = BorderStyle.None;
-                    timerLoop.Interval = 1;
-                    timerLoop.Enabled = true;
-                    this.Focus();
-                }
-            }
+            // Handled in ProcessCmdKey
         }
 
         private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
