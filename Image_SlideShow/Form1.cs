@@ -67,8 +67,6 @@ namespace Image_SlideShow
                 this.Text = Application.ProductName + " v" + Application.ProductVersion;
             }
 
-            Control.CheckForIllegalCrossThreadCalls = false;
-
             this.Height = 353;
             this.Width = 415;
             pictureBox1.SizeMode = PictureBoxSizeMode.StretchImage;
@@ -183,6 +181,7 @@ namespace Image_SlideShow
         /// <returns>True if a folder</returns>
         public Boolean IsFolder(String path)
         {
+            if (!Directory.Exists(path) && !File.Exists(path)) return false;
             return ((File.GetAttributes(path) & FileAttributes.Directory) == FileAttributes.Directory);
         }
 
@@ -211,7 +210,7 @@ namespace Image_SlideShow
         private void fetchFileList()
         {
             long fc = 0;
-            long count = inFiles.LongLength;
+            int count = inFiles.LongLength > int.MaxValue ? int.MaxValue : (int)inFiles.LongLength;
 
             //ClearFileList();
             for (int i = 0; i < count; i++)
@@ -242,7 +241,7 @@ namespace Image_SlideShow
                                     fc++;
                                     if (fc % 50 == 0 || fc < 500)
                                     {
-                                        updateStatus();
+                                        this.BeginInvoke((MethodInvoker)delegate { updateStatus(); });
                                     }
                                     break;
                                 default:
@@ -250,8 +249,11 @@ namespace Image_SlideShow
                             };
                         }
                     }
-                    catch
-                    { }
+                    catch (UnauthorizedAccessException) { }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Error accessing folder: " + ex.Message);
+                    }
                 }
                 else
                 {
@@ -274,7 +276,7 @@ namespace Image_SlideShow
                             fc++;
                             if (fc % 50 == 0 || fc < 500)
                             {
-                                updateStatus();
+                                this.BeginInvoke((MethodInvoker)delegate { updateStatus(); });
                             }
                             break;
                         default:
@@ -283,19 +285,22 @@ namespace Image_SlideShow
                 }
             }
 
-            updateStatus();
-            statusLabel.Text += " (DONE)";
+            this.BeginInvoke((MethodInvoker)delegate
+            {
+                updateStatus();
+                statusLabel.Text += " (DONE)";
 
-            if (fileList.Count == 0)
-            {
-                pictureBox1.ImageLocation = "";
-                pictureBox1.SizeMode = PictureBoxSizeMode.StretchImage;
-                pictureBox1.Image = Image_SlideShow.Properties.Resources.initialBack;
-            }
-            else
-            {
-                RandGap = (ulong)(fileList.Count * 0.8);
-            }
+                if (fileList.Count == 0)
+                {
+                    pictureBox1.ImageLocation = "";
+                    pictureBox1.SizeMode = PictureBoxSizeMode.StretchImage;
+                    pictureBox1.Image = Image_SlideShow.Properties.Resources.initialBack;
+                }
+                else
+                {
+                    RandGap = (ulong)(fileList.Count * 0.8);
+                }
+            });
         }
 
         private void fetchIniFileList(String path)
@@ -325,7 +330,7 @@ namespace Image_SlideShow
                             }
                             if (i % 50 == 0 || i < 500)
                             {
-                                updateStatus();
+                                this.BeginInvoke((MethodInvoker)delegate { updateStatus(); });
                             }
                             break;
                         default:
@@ -453,26 +458,18 @@ namespace Image_SlideShow
                 });
             }
 
-            // Try to randomly pick an unplayed image
-            inx = rand.Next(0, fileList.Count);
-            int attempts = 0;
-            while (fileHitSeq[inx] != 0 && attempts < fileList.Count * 2)
+            List<int> unplayedIndices = new List<int>();
+            for (int i = 0; i < fileHitSeq.Count; i++)
             {
-                inx = rand.Next(0, fileList.Count);
-                attempts++;
+                if (fileHitSeq[i] == 0) unplayedIndices.Add(i);
             }
-
-            // Linear search fallback if random pick fails to find an unplayed image quickly
-            if (fileHitSeq[inx] != 0)
+            if (unplayedIndices.Count > 0)
             {
-                for (int i = 0; i < fileHitSeq.Count; i++)
-                {
-                    if (fileHitSeq[i] == 0)
-                    {
-                        inx = i;
-                        break;
-                    }
-                }
+                inx = unplayedIndices[rand.Next(unplayedIndices.Count)];
+            }
+            else
+            {
+                inx = 0;
             }
 
             fileHitSeq[inx] = RandSeq++;
@@ -969,13 +966,6 @@ namespace Image_SlideShow
             if (fileList.Count <= 0)
                 return;
 
-            Thread thread = new Thread(saveImageList);
-            thread.Priority = ThreadPriority.AboveNormal;
-            thread.Start();
-        }
-
-        private void saveImageList()
-        {
             SaveFileDialog saveDialog = new SaveFileDialog();
             saveDialog.OverwritePrompt = true;
             saveDialog.Filter = "Slideshow Image List|*.ini";
@@ -986,33 +976,39 @@ namespace Image_SlideShow
 
             if (saveDialog.ShowDialog() == DialogResult.OK)
             {
-                statusLabel.Text = "Saving lists, please wait... ( 0% )";
-
-                if (File.Exists(saveDialog.FileName))
-                    File.Delete(saveDialog.FileName);
-
-                IniFile file = new IniFile(saveDialog.FileName);
-                file.WriteValue("IMAGE_SLIDESHOW_LIST", "Count", fileList.Count.ToString());
-
-                for (int i = 0; i < fileList.Count; i++)
-                {
-                    file.WriteValue("PATH", i.ToString(), fileList[i]);
-
-                    if (i < 500 || i % 100 == 0)
-                    {
-                        int percent = (int)(((float)i / (float)fileList.Count) * 100.00);
-                        statusLabel.Text = "Saving lists, please wait... ( " + percent.ToString() + "% )";
-                    }
-                }
-
-                statusLabel.Text = fileList.Count + " Images. (SAVED DONE)";
-                file = null;
+                string targetFileName = saveDialog.FileName;
+                Thread thread = new Thread(() => saveImageList(targetFileName));
+                thread.Priority = ThreadPriority.AboveNormal;
+                thread.Start();
             }
 
             saveDialog.Dispose();
-            saveDialog = null;
+        }
 
-            Thread.CurrentThread.Abort();
+        private void saveImageList(string fileName)
+        {
+            this.BeginInvoke((MethodInvoker)delegate { statusLabel.Text = "Saving lists, please wait... ( 0% )"; });
+
+            if (File.Exists(fileName))
+                File.Delete(fileName);
+
+            IniFile file = new IniFile(fileName);
+            file.WriteValue("IMAGE_SLIDESHOW_LIST", "Count", fileList.Count.ToString());
+
+            for (int i = 0; i < fileList.Count; i++)
+            {
+                file.WriteValue("PATH", i.ToString(), fileList[i]);
+
+                if (i < 500 || i % 100 == 0)
+                {
+                    int percent = (int)(((float)i / (float)fileList.Count) * 100.00);
+                    this.BeginInvoke((MethodInvoker)delegate { statusLabel.Text = "Saving lists, please wait... ( " + percent.ToString() + "% )"; });
+                }
+            }
+
+            this.BeginInvoke((MethodInvoker)delegate { statusLabel.Text = fileList.Count + " Images. (SAVED DONE)"; });
+            file = null;
+
             return;
         }
 

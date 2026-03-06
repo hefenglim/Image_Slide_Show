@@ -47,9 +47,10 @@ namespace Image_SlideShow
             {
                 if (e.KeyChar == 13)
                 {
-                    if (Int32.Parse(textSecond.Text) > 0)
+                    int result;
+                    if (Int32.TryParse(textSecond.Text, out result) && result > 0)
                     {
-                        m_parent.setDuration(Int32.Parse(textSecond.Text));
+                        m_parent.setDuration(result);
                         this.Close();
                     }
                 }
