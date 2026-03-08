@@ -393,20 +393,27 @@ namespace Image_SlideShow
 
 
         private void shuffleClickToONToolStripMenuItem_Click(object sender, EventArgs e)
+{
+    if (shufflePlay)
+    {
+        shufflePlay = false;
+        shuffleClickToONToolStripMenuItem.Text = "S&huffle (Click to ON)";
+        ini.WriteValue("SETTING", "Shuffle", "0");
+    }
+    else
+    {
+        shufflePlay = true;
+        shuffleClickToONToolStripMenuItem.Text = "S&huffle (Click to OFF)";
+        ini.WriteValue("SETTING", "Shuffle", "1");
+        
+        // Restore position in Random history if applicable
+        if (historyList.Count > 0 && historyIndex >= 0 && historyIndex < historyList.Count)
         {
-            if (shufflePlay)
-            {
-                shufflePlay = false;
-                shuffleClickToONToolStripMenuItem.Text = "S&huffle (Click to ON)";
-                ini.WriteValue("SETTING", "Shuffle", "0");
-            }
-            else
-            {
-                shufflePlay = true;
-                shuffleClickToONToolStripMenuItem.Text = "S&huffle (Click to OFF)";
-                ini.WriteValue("SETTING", "Shuffle", "1");
-            }
+            loopInx = historyList[historyIndex];
+            pictureBox1.ImageLocation = fileList[loopInx];
         }
+    }
+}
 
         private void clearAllImagesToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -477,57 +484,76 @@ namespace Image_SlideShow
         }
 
         private void advanceImage()
+{
+    // Reset the timer so it doesn't immediately skip to the next image
+    // right after a manual navigation
+    timerLoop.Stop();
+    timerLoop.Start();
+
+    if (fileList.Count == 0) return;
+
+    if (!shufflePlay)
+    {
+        // Seq mode: explore neighborhood without changing random history
+        loopInx++;
+        if (loopInx >= fileList.Count)
+            loopInx = 0;
+        
+        pictureBox1.ImageLocation = fileList[loopInx];
+        return;
+    }
+
+    // Random mode: follows history list
+    if (historyIndex < historyList.Count - 1)
+    {
+        // Move forward in history
+        historyIndex++;
+        loopInx = historyList[historyIndex];
+        pictureBox1.ImageLocation = fileList[loopInx];
+    }
+    else
+    {
+        // Generate next random image
+        loopInx = randomPickInx();
+
+        historyList.Add(loopInx);
+        if (historyList.Count > MAX_HISTORY_DEPTH)
         {
-            if (fileList.Count == 0) return;
-
-            if (historyIndex < historyList.Count - 1)
-            {
-                // Move forward in history
-                historyIndex++;
-                loopInx = historyList[historyIndex];
-                pictureBox1.ImageLocation = fileList[loopInx];
-            }
-            else
-            {
-                // Generate next image
-                if (shufflePlay)
-                {
-                    loopInx = randomPickInx();
-                }
-                else
-                {
-                    if (historyList.Count > 0)
-                        loopInx = historyList[historyIndex] + 1;
-                    else
-                        loopInx++;
-                    
-                    if (loopInx >= fileList.Count)
-                        loopInx = 0;
-                        
-                    fileHitSeq[loopInx] = RandSeq++;
-                }
-
-                historyList.Add(loopInx);
-                if (historyList.Count > MAX_HISTORY_DEPTH)
-                {
-                    historyList.RemoveAt(0);
-                }
-                historyIndex = historyList.Count - 1;
-                pictureBox1.ImageLocation = fileList[loopInx];
-            }
+            historyList.RemoveAt(0);
         }
+        historyIndex = historyList.Count - 1;
+        pictureBox1.ImageLocation = fileList[loopInx];
+    }
+}
 
         private void previousImage()
-        {
-            if (fileList.Count == 0) return;
+{
+    // Reset the timer so it doesn't immediately skip to the next image
+    // right after a manual navigation
+    timerLoop.Stop();
+    timerLoop.Start();
 
-            if (historyIndex > 0)
-            {
-                historyIndex--;
-                loopInx = historyList[historyIndex];
-                pictureBox1.ImageLocation = fileList[loopInx];
-            }
-        }
+    if (fileList.Count == 0) return;
+
+    if (!shufflePlay)
+    {
+        // Seq mode: explore neighborhood without changing random history
+        loopInx--;
+        if (loopInx < 0)
+            loopInx = fileList.Count - 1;
+        
+        pictureBox1.ImageLocation = fileList[loopInx];
+        return;
+    }
+
+    // Random mode: go back in history if possible
+    if (historyIndex > 0)
+    {
+        historyIndex--;
+        loopInx = historyList[historyIndex];
+        pictureBox1.ImageLocation = fileList[loopInx];
+    }
+}
 
         private void timerLoop_Tick(object sender, EventArgs e)
         {
