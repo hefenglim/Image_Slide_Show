@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -595,7 +595,8 @@ namespace Image_SlideShow
                 switch (keyData)
                 {
                     case Keys.Space:
-                        TogglePause();
+                        shuffleClickToONToolStripMenuItem_Click(null, null);
+                        ShowOsd(shufflePlay ? "Shuffle On" : "Shuffle Off");
                         return true;
                     case Keys.Left:
                         previousImage();
@@ -630,8 +631,7 @@ namespace Image_SlideShow
                         ShowOsd(fullscreen ? "Fullscreen On" : "Fullscreen Off");
                         return true;
                     case Keys.S:
-                        shuffleClickToONToolStripMenuItem_Click(null, null);
-                        ShowOsd(shufflePlay ? "Shuffle On" : "Shuffle Off");
+                        TogglePause();
                         return true;
                 }
             }
