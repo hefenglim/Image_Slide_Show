@@ -127,17 +127,37 @@
 - 新增圖片到 `fileList` 時，必須同步新增對應的 `fileHitSeq` 項目（初始值 0）。
 - `ClearFileList()` 必須同時清空 `fileList`、`fileHitSeq`、`historyList` 並重置 `historyIndex = -1`。
 
-## 7. 建議與功能擴充 (Suggestions & Enhancements)
+## 7. 建置與發佈流程指南 (Build & Release Workflow)
+
+本專案歷史悠久，原先使用 `.NET Framework 4.0 Client Profile`。在較新的 Visual Studio (例如 VS 2022/2025) 中，預設不再支援該版本的建置，會導致 MSBuild 直接 Skip 建置而失敗。未來若需自動化建置與發佈，請嚴格遵循以下步驟：
+
+### 7.1 環境升級與建置 (Build)
+1. **修改目標框架**：修改 `Image_SlideShow.csproj`，將 `<TargetFrameworkVersion>v4.0</TargetFrameworkVersion>` 改為 `v4.8`，並把 `<TargetFrameworkProfile>Client</TargetFrameworkProfile>` 整行註解掉或刪除。
+2. **進版號**：更新 `Properties/AssemblyInfo.cs` 中的 `[assembly: AssemblyVersion]` 與 `AssemblyFileVersion`。
+3. **使用 devenv.com 建置**：因為舊專案的參考組件關係，單純使用 MSBuild.exe 在新環境下容易解析失敗，請直接調用 Visual Studio 命令列介面 `devenv.com` 執行完整重建：
+   ```powershell
+   & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.com" "C:\Github\Image_Slide_Show\Image_SlideShow.sln" /Rebuild Release
+   ```
+4. **驗證編譯結果**：檢查 `bin\Release\Image_SlideShow.exe` 是否成功產生，且檔案大小與版本號 (`FileVersion`) 正確。
+
+### 7.2 GitHub 發佈流程 (GitHub Release)
+1. **推送到遠端**：將所有 `.csproj` 與 `.cs` 的變更 Commit，並 Push 到 `origin/master`。
+2. **建立 Release 與 Tag**：直接透過 GitHub CLI (`gh`) 自動打上 Tag 並上傳新編譯好的執行檔：
+   ```powershell
+   gh release create vX.X.X.X "C:\Github\Image_Slide_Show\Image_SlideShow\bin\Release\Image_SlideShow.exe" --title "vX.X.X.X" --notes "版本更新說明..." --repo hefenglim/Image_Slide_Show
+   ```
+
+## 8. 建議與功能擴充 (Suggestions & Enhancements)
 這是一個非常實用的基礎輪播工具，目前已經實現部分進階操控，如果希望追求更強大或更符合現代使用者的需求，可以考慮增加以下功能或進行優化：
 
-### 7.1 實用工具與系統整合
+### 8.1 實用工具與系統整合
 - **刪除目前圖片**：增加一個快速鍵（例如 `Delete` 鍵）或右鍵選單，可以直接將目前正在顯示的圖片移至資源回收桶（適合用來快速整理照片）。
 - **多螢幕支援 (Multi-Monitor Support)**：如果使用者有多個螢幕，允許指定輪播要顯示在哪一個螢幕上，而不是預設的主螢幕。
 - **開機自動啟動與最小化到系統匣 (System Tray)**：適合將舊電腦或螢幕當作電子相框使用時，開機即可自動隱藏在右下角並開始輪播。
 - **資料夾監控 (Folder Monitoring)**：使用 `FileSystemWatcher` 監聽匯入的資料夾，當有新圖片加入時，自動更新播放清單。
 
-### 7.2 程式碼架構與現代化建議
+### 8.2 程式碼架構與現代化建議
 - **升級為 WPF 或 WinUI 3**：如果追求更流暢的硬體加速動畫渲染、現代化 UI 與更進階的視覺效果，可考慮將專案移植至 WPF 或 .NET MAUI / WinUI 3 框架。
 
-## 8. 總結
+## 9. 總結
 `Image_Slide_Show` 是一個典型、輕量、具有實用性的 WinForms 小工具範例。它包含了本地端檔案處理、系統 API 呼叫 (設定檔與熱鍵)、多執行緒背景讀取（使用 `BeginInvoke` 安全更新 UI）、自訂視窗樣式操控、自定歷史重播權重等關鍵實務技巧，適合用作學習 C# 與 Windows UI 互動機制的基礎專案。結合上述的建議擴充，它可以變成一個非常完善的桌面電子相框或展場輪播軟體。
