@@ -1,0 +1,10 @@
+# Roo Code System Instructions
+
+Before making any changes to the codebase, proposing architectural decisions, or attempting to build/compile the project, you MUST thoroughly read the `AGENTS.md` file located in the root directory.
+
+`AGENTS.md` is the absolute source of truth for this specific project and outlines:
+1. The core features and the Shuffle/Sequential mode logic.
+2. Critical development constraints, particularly Windows Forms multi-threading UI updates (`BeginInvoke`).
+3. The precise CLI commands and parameters requirement (`/lcid 1033`) to successfully build and release the .NET legacy project using `devenv.com`.
+
+Do NOT proceed with changes or builds without adhering to the guidelines in `AGENTS.md`.
