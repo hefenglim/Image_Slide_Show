@@ -134,9 +134,10 @@
 ### 7.1 環境升級與建置 (Build)
 1. **修改目標框架**：修改 `Image_SlideShow.csproj`，將 `<TargetFrameworkVersion>v4.0</TargetFrameworkVersion>` 改為 `v4.8`，並把 `<TargetFrameworkProfile>Client</TargetFrameworkProfile>` 整行註解掉或刪除。
 2. **進版號**：更新 `Properties/AssemblyInfo.cs` 中的 `[assembly: AssemblyVersion]` 與 `AssemblyFileVersion`。
-3. **使用 devenv.com 建置**：因為舊專案的參考組件關係，單純使用 MSBuild.exe 在新環境下容易解析失敗，請直接調用 Visual Studio 命令列介面 `devenv.com` 執行完整重建：
+3. **使用 devenv.com 建置**：因為舊專案的參考組件關係，單純使用 MSBuild.exe 在新環境下容易解析失敗，請直接調用 Visual Studio 命令列介面 `devenv.com` 執行完整重建。
+   > **⚠️ AI Agent 注意事項 (CLI Encoding)**: 為了避免終端機中文亂碼導致 Agent 無法解析編譯錯誤，執行建置時**必須強制加上 `/lcid 1033` 參數**以輸出英文 Log：
    ```powershell
-   & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.com" "C:\Github\Image_Slide_Show\Image_SlideShow.sln" /Rebuild Release
+   & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.com" "C:\Github\Image_Slide_Show\Image_SlideShow.sln" /Rebuild Release /lcid 1033
    ```
 4. **驗證編譯結果**：檢查 `bin\Release\Image_SlideShow.exe` 是否成功產生，且檔案大小與版本號 (`FileVersion`) 正確。
 
